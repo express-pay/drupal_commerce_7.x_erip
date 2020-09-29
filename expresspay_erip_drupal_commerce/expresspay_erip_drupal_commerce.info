@@ -1,0 +1,6 @@
+name = Экспресс платежи: ЕРИП
+description = Предоставляет способ оплаты ЕРИП
+package = Commerce (contrib)
+dependencies[] = commerce
+dependencies[] = commerce_payment
+core = 7.x

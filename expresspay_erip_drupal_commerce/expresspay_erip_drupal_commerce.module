@@ -1,0 +1,436 @@
+<?php
+
+function expresspay_erip_drupal_commerce_menu() {
+	//связь url и функций-обработчиков
+	
+	$items = array();
+	$items['commerce/expresspay_erip/notify'] = array(
+		'title' => 'Payment notify',
+		'page callback' => 'expresspay_erip_drupal_commerce_notify',
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK,
+	);
+	$items['commerce/expresspay_erip/success'] = array(
+		'title' => 'Payment success',
+		'page callback' => 'expresspay_erip_drupal_commerce_success',
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK,
+	);
+	$items['commerce/expresspay_erip/fail'] = array(
+		'title' => 'Payment fail',
+		'page callback' => 'expresspay_erip_drupal_commerce_fail',
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK,
+	);
+	return $items;
+	
+}
+
+//Implements hook_commerce_payment_method_info().
+function expresspay_erip_drupal_commerce_commerce_payment_method_info() {
+	//Базовая информация о способе оплаты,
+	//нужно ли покупателю покидать пределы сайта при оплате заказа этим способом,
+	//автоматический редирект на сторонний сайт при оплате заказа
+	
+	return array(
+		'expresspay_erip_drupal_commerce' => array(
+			'title' => t('ЕРИП'),
+			'description' => t('Оплата через систему ЕРИП'),
+			'terminal' => FALSE,
+			'offsite' => TRUE,
+			'offsite_autoredirect' => TRUE,
+			'active' => TRUE,
+		),
+	);
+}
+
+//Payment method callback: settings form.
+function expresspay_erip_drupal_commerce_settings_form($settings = NULL) {
+	//Если способ оплаты имеет настройки, то реализуем callback в этой функции
+		
+	$form = array();
+	
+	$settings = $setting == null ? (array)$settings + array(
+		'url_api'				=> 'https://api.express-pay.by/v1/web_invoices',
+		'url_sandbox_api'		=> 'https://sandbox-api.express-pay.by/v1/web_invoices',
+		'handler_url'			=> $GLOBALS['base_root'].'/commerce/expresspay_erip/notify',
+		'db_status_wait' 		=> 'processing',
+		'serviceId'				=> ''
+	) : $setting;
+
+	$form['token'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Токен'),
+		'#description' => t('Генерирутся в панели express-pay.by'),
+		'#default_value' => $settings['token'],
+	  );
+	  $form['serviceId'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Номер услуги'),
+		'#description' => t('Номер услуги в express-pay.by'),
+		'#default_value' => $settings['serviceId'],
+	  );
+	  $form['handler_url'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Адрес для уведомлений'),
+		'#default_value' => $settings['handler_url'],
+		'#disabled' => true,
+	  );
+	  $form['secret_key'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Секретное слово для подписи счетов'),
+		'#description' => t('Секретного слово, которое известно только серверу и клиенту. Используется для формирования цифровой подписи. Задается в панели express-pay.by'),
+		'#default_value' => $settings['secret_key'],
+	  );
+	  $form['secret_key_norify_mode'] = array(
+		'#type' => 'checkbox',
+		'#title' => t('Использовать цифровую подпись в уведомлениях.  Задается в панели express-pay.by'),
+		'#default_value' => $settings['secret_key_norify_mode'],
+	  );
+	  $form['secret_key_norify'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Секретное слово для подписи уведомлений'),
+		'#description' => t('Секретного слово, которое известно только серверу и клиенту. Используется для формирования цифровой подписи. Задается в панели express-pay.by'),
+		'#default_value' => $settings['secret_key_norify'],
+	  );
+	  $form['name_editable'] = array(
+		'#type' => 'checkbox',
+		'#title' => t('Разрешено изменять ФИО плательщика'),
+		'#description' => t('Разрешается при оплате счета изменять ФИО плательщика'),
+		'#default_value' => $settings['name_editable'],
+	  );
+	  $form['address_editable'] = array(
+		'#type' => 'checkbox',
+		'#title' => t('Разрешено изменять адрес плательщика'),
+		'#description' => t('Разрешается при оплате счета изменять адрес плательщика'),
+		'#default_value' => $settings['address_editable'],
+	  );
+	  $form['amount_editable'] = array(
+		'#type' => 'checkbox',
+		'#title' => t('Разрешено изменять сумму оплаты'),
+		'#description' => t('Разрешается при оплате счета изменять сумму платежа'),
+		'#default_value' => $settings['amount_editable'],
+	  );
+	  $form['test_mode'] = array(
+		'#type' => 'checkbox',
+		'#title' => t('Использовать тестовый режим'),
+		'#default_value' => $settings['test_mode'],
+	  );
+	  $form['url_api'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Адрес API'),
+		'#default_value' => $settings['url_api'],
+	  );
+	  $form['url_sandbox_api'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Адрес тестового API'),
+		'#default_value' => $settings['url_sandbox_api'],
+	  );
+	  $form['db_status_wait'] = array(
+		'#type'				=> 'select',
+		'#title'			=> t('Статус заказа после оплаты'),
+		'#description'		=> t('Выберите статус заказа, который будет отображаться после оплаты.'),
+		'#options'			=> array('processing' => 'processing', 'cart' => 'cart', 'completed' => 'completed'),
+		'#default_value'	=> $settings['db_status_wait'],
+	);
+	$form['message_success'] = array(
+		'#type' => 'textarea',
+		'#title' => t('Сообщение при успешном заказе'),
+		'#default_value' => $settings['message_success'],
+	  );
+
+	$form['#submit'][] = variable_set('expresspay_erip_drupal_commerce_settings', $form);
+	return $form;
+}
+
+//Payment method callback: submit form.
+function expresspay_erip_drupal_commerce_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+	//Если при выборе способа оплаты нужно показывать какую-нибудь информацию
+	//или для оплаты от покупателя требуются дополнительные данные,
+	//то реализуем callback expresspay_erip_drupal_commerce_submit_form()
+	
+	$build = array();
+	$variables_expresspay = array(
+		'path' => '/sites/all/modules/expresspay_erip_drupal_commerce/images/expresspay-logo.png',
+		'alt' => 'ExpressPay',
+		'title' => 'Произвести оплату через ЕРИП',
+		'attributes' => array('class' => 'logo-Erip'),
+	);
+
+	$variables_erip = array(
+		'path' => '/sites/all/modules/expresspay_erip_drupal_commerce/images/erip-logo.png',
+		'alt' => 'Erip',
+		'title' => 'Произвести оплату через ЕРИП',
+		'attributes' => array('class' => 'logo-Erip'),
+	);
+
+	$text = theme('image', $variables_expresspay) . theme('image',$variables_erip);
+	$text .= '<div class="desc">' . t('Произвести оплату через ЕРИП') . '</div>';
+	$text .= '<style type="text/css"> label.option {margin-left: 20px !important;  } .form-type-radio input {opacity: 1 !important; margin: 4px 0px 10px 0px !important;}  </style>';
+	$build['print_receipt'] = array('#markup' => $text);
+	return $build;
+}
+
+//Payment method callback: payment redirect form.
+function expresspay_erip_drupal_commerce_redirect_form($form, &$form_state, $order, $payment_method) {
+	//формируем форму с данными, которые будут отправлены на сайт ExpressPay
+	$wrapper = entity_metadata_wrapper('commerce_order', $order);
+	//Сумма заказа:
+	$amount = $wrapper->commerce_order_total->amount->value();
+
+	$currency = $wrapper->commerce_order_total->currency_code->value();
+
+	$currency_code = $currency == 'BYN' ? 933 : $currency;
+	$amount = commerce_currency_amount_to_decimal($amount,$wrapper->commerce_order_total->currency_code->value());
+
+	$amount = str_replace('.',',',$amount);
+
+	$order_id = $order->order_id;
+	
+	$test_mode = expresspay_erip_drupal_commerce_get_settings('test_mode');
+
+	$form['#action'] = $test_mode ? expresspay_erip_drupal_commerce_get_settings('url_sandbox_api') : expresspay_erip_drupal_commerce_get_settings('url_api');
+
+	$service_id = expresspay_erip_drupal_commerce_get_settings('serviceId');
+
+	//drupal_set_message(t('order : ' . json_encode($order)), 'debug');
+
+	$form['serviceid'] 			= array('#type' => 'hidden', '#value' => $service_id);
+	$form["accountno"]			= array('#type' => 'hidden', '#value' => $order_id);
+	$form["amount"]				= array('#type' => 'hidden', '#value' => $amount);
+	$form["currency"]			= array('#type' => 'hidden', '#value' => $currency_code);
+	/*$form["expiration"]			= '';
+	$form["info"]				= '';
+	$form["surname"]			= '';
+	$form["firstname"]			= '';
+	$form["patronymic"]			= '';
+	$form["city"]				= '';
+	$form["street"]				= '';
+	$form["house"]				= '';
+	$form["building"]			= '';
+	$form["apartment"]			= '';
+	$form["isnameeditable"]		= '';
+	$form["isaddresseditable"]	= '';
+	$form["isamounteditable"]	= '';
+	$form["emailnotification"]	= '';
+	$form["smsphone"]			= '';*/
+	$form["returntype"]			= array('#type' => 'hidden', '#value' => 'redirect');
+	$form["returnurl"]			= array('#type' => 'hidden', '#value' => $GLOBALS['base_root'].'/commerce/expresspay_erip/success?accountno=' . $order_id);//$GLOBALS['base_root'].'/commerce/expresspay_erip/success';
+	$form["failurl"]			= array('#type' => 'hidden', '#value' => $GLOBALS['base_root'].'/commerce/expresspay_erip/fail');//$GLOBALS['base_root'].'/commerce/expresspay_erip/fail';
+
+	//формирования массива для цифровой подписи
+	$sign_params = array(
+		'token' 			=> expresspay_erip_drupal_commerce_get_settings('token'),
+		'serviceid' 		=> expresspay_erip_drupal_commerce_get_settings('serviceId'),
+		'accountno' 		=> $order_id,
+		'amount'			=> $amount,
+		'currency'			=> $currency_code,
+		'expiration'		=> '',
+		'info'				=> '',
+		'surname'			=> '',
+		'firstname'			=> '',
+		'patronymic'		=> '',
+		'city'				=> '',
+		'street'			=> '',
+		'house'				=> '',
+		'building'			=> '',
+		'apartment'			=> '',
+		'isnameeditable'	=> '',
+		'isaddresseditable'	=> '',
+		'isamounteditable'	=> '',
+		'emailnotification'	=> '',
+		'smsphone'			=> '',
+		'returntype'		=> 'redirect',
+		'returnurl'			=> $GLOBALS['base_root'].'/commerce/expresspay_erip/success',
+		'failurl'			=> $GLOBALS['base_root'].'/commerce/expresspay_erip/fail'
+	);
+
+	$signature = compute_signature_add_invoice($sign_params,'');
+
+	$form['signature'] = array('#type' => 'hidden', '#value' => $signature);
+		
+	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => t('Оплатить')
+	);
+
+	$status = expresspay_erip_drupal_commerce_get_settings('db_status_wait');
+
+	db_query("UPDATE {commerce_order} SET status = 'pending' WHERE order_id = $order_id");
+
+	return $form;
+}
+
+//Menu callback.
+function expresspay_erip_drupal_commerce_notify() {
+	//принимает уведомление об оплате от ExpressPay
+	try{	
+		if(!empty($_POST)) {
+			
+			$dataJSON = ( isset($_REQUEST['Data']) ) ? htmlspecialchars_decode($_REQUEST['Data']) : '';
+
+			$dataJSON = stripcslashes($dataJSON);
+
+			$secret_key_norify_mode = expresspay_erip_drupal_commerce_get_settings('secret_key_norify_mode');
+
+			$secret_word = expresspay_erip_drupal_commerce_get_settings('secret_key_norify');
+
+			if($secret_key_norify_mode)
+			{
+				$sign = expresspay_erip_drupal_commerce_computeSignature($dataJSON, $secretWord);
+
+				$hash = ( isset($_REQUEST['Signature']) ) ? $_REQUEST['Signature'] : '';
+
+				if(!isset($hash) || empty($hash) || $hash != $sign)
+				{
+					watchdog('expresspay_erip_drupal_commerce', 'Wrong signature received. %sig_int != %sig_in', array(
+					'%sig_int' => $hash,
+					'%sig_in' => $notify_signature,
+					), WATCHDOG_ERROR);
+					header("HTTP/1.0 400 Bad Request");
+					print("HTTP/1.0 400 Bad Request");	
+
+					return;
+				}
+			}
+
+			$data = json_decode($dataJSON, true);
+
+			$cmdType 	= $data['CmdType'];
+
+			if($cmdType == 1)
+			{
+
+				$order = commerce_order_load($accountNo);
+
+				$status_setting = expresspay_erip_drupal_commerce_get_settings('db_status_wait');
+
+				if($order->status == 1)
+				{
+
+					$wrapper = entity_metadata_wrapper('commerce_order', $order);
+					
+					$order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+					$transaction = commerce_payment_transaction_new('expresspay_erip_drupal_commerce', $order->order_id);
+					$transaction->uid = $order->uid;
+					$transaction->instance_id = $order->data['payment_method'];
+					$transaction->amount = commerce_currency_amount_to_decimal($order->commerce_order_total[LANGUAGE_NONE][0]['amount'] * 100, commerce_default_currency());
+					$transaction->currency_code = $wrapper->commerce_order_total->currency_code->value();
+					$transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
+					$transaction->message = expresspayOrderResultSuccessPayment;
+					$transaction->message_variables = array();
+					$order->status = $payment_status;
+					commerce_order_save($order);
+					commerce_payment_transaction_save($transaction);
+					commerce_payment_transaction_set_properties($transaction, 'user', $order->uid);
+					
+					header("HTTP/1.0 200 OK"); // генерация HTTP-заголовка
+					print ("HTTP/1.0 200 OK");
+				}
+			} 
+			else 
+			{
+				header("HTTP/1.0 200 OK"); // генерация HTTP-заголовка
+				print ("HTTP/1.0 200 OK");
+				return;
+			}
+		}
+		else{
+			header("HTTP/1.0 400 FAIL"); // генерация HTTP-заголовка
+			print ("HTTP/1.0 400 FAIL");
+		}
+	}catch(Exception $e){
+		
+		watchdog(
+			'expresspay_erip_drupal_commerce',
+			'Exception_Message: '. $e->getMessage(),
+			NULL
+		  );
+
+
+		header("HTTP/1.0 500 FAIL"); // генерация HTTP-заголовка
+		print ("HTTP/1.0 500 FAIL");
+	}
+}
+
+function expresspay_erip_drupal_commerce_success() {
+	//оплата совершена. уведомление
+	if(!empty($_GET['ExpressPayAccountNumber'])){
+		$order_id = $_GET['ExpressPayAccountNumber'];
+	}
+	$order = commerce_order_load($order_id);
+	drupal_set_message(t('Счет добавлен в систему ЕРИП для оплаты. Номер заказа для оплаты: ' . $order_id), 'status');
+	commerce_payment_redirect_pane_next_page($order);
+	drupal_goto(commerce_checkout_order_uri($order));
+}
+
+function expresspay_erip_drupal_commerce_fail() {
+	//оплата не совершена. Перенаправление в корзину
+	drupal_set_message(t('Ошибка, пожалуйста, повторите попытку.'), 'error');
+	drupal_goto('cart/');
+}
+
+function expresspay_erip_drupal_commerce_get_settings($settings) {
+	//возвращает $output со значение из форм(expresspay_erip_drupal_commerce_settings_form)
+		
+	$output = '';
+	$vars = variable_get('expresspay_erip_drupal_commerce_settings', '');
+	if (!empty($vars)) {
+		foreach ($vars as $key=>$var) {
+			if ($key == $settings) {
+				$output = $vars[$key]['#default_value'];
+				break;
+			}
+		}
+	}
+	return $output;
+}
+							
+function compute_signature_add_invoice($request_params, $secret_word) {
+	$secret_word = trim($secret_word);
+	$normalized_params = array_change_key_case($request_params, CASE_LOWER);
+	$api_method = array(
+				"token",
+				"serviceid",
+				"accountno",
+				"amount",
+				"currency",
+				"expiration",
+				"info",
+				"surname",
+				"firstname",
+				"patronymic",
+				"city",
+				"street",
+				"house",
+				"building",
+				"apartment",
+				"isnameeditable",
+				"isaddresseditable",
+				"isamounteditable",
+				"emailnotification",
+				"smsphone",
+				"returntype",
+				"returnurl",
+				"failurl"
+	);
+
+	$result = '';
+
+	foreach ($api_method as $item)
+		$result .= ( isset($normalized_params[$item]) ) ? $normalized_params[$item] : '';
+
+	$hash = strtoupper(hash_hmac('sha1', $result, $secret_word));
+
+	return $hash;
+}
+
+function expresspay_erip_drupal_commerce_computeSignature($json, $secretWord) {
+    $hash = NULL;
+    
+    if (empty(trim($secretWord)))
+	$hash = strtoupper(hash_hmac('sha1', $json, ""));
+    else
+        $hash = strtoupper(hash_hmac('sha1', $json, $secretWord));
+    return $hash;
+}
